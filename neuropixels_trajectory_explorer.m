@@ -4,8 +4,13 @@
 %
 % GUI for planning Neuropixels trajectories with the Allen CCF atlas
 %
-% Instructions for use: 
+% Instructions for use:
 % https://github.com/petersaj/neuropixels_trajectory_explorer
+%
+% Inputs (optional):
+% tv, av, st = CCF template volume, annotated volume, structure tree
+% (if not entered, CCF folder must be in matlab path to find)
+
 
 
 %% GUI setup
@@ -28,10 +33,16 @@ gui_data = struct;
 
 % Load in atlas
 % (directory with CCF must be in matlab path to find it)
-% Find path with CCF
-allen_atlas_path = fileparts(which('template_volume_10um.npy'));
-if isempty(allen_atlas_path)
-    error('CCF atlas not in MATLAB path (click ''Set path'', add folder with CCF)');
+if nargin < 3
+    % Find path with CCF
+    allen_atlas_path = fileparts(which('template_volume_10um.npy'));
+    if isempty(allen_atlas_path)
+        error('CCF atlas not in MATLAB path (click ''Set path'', add folder with CCF)');
+    end
+    % Load CCF components
+    tv = readNPY([allen_atlas_path filesep 'template_volume_10um.npy']); % grey-scale "background signal intensity"
+    av = readNPY([allen_atlas_path filesep 'annotation_volume_10um_by_index.npy']); % the number at each pixel labels the area, see note below
+    st = load_structure_tree([allen_atlas_path filesep 'structure_tree_safe_2017.csv']); % a table of what all the labels mean
 end
 % Load CCF components
 tv = readNPY([allen_atlas_path filesep 'template_volume_10um.npy']); % grey-scale "background signal intensity"
@@ -81,9 +92,9 @@ brain_outline_patchdata = reducepatch(isosurface(curr_ml_grid,curr_ap_grid, ...
     curr_dv_grid,permute(brain_volume,[3,1,2]),0.5),0.1);
 
 brain_outline = patch( ...
-        'Vertices',brain_outline_patchdata.vertices, ...
-        'Faces',brain_outline_patchdata.faces, ...
-        'FaceColor',[0.5,0.5,0.5],'EdgeColor','none','FaceAlpha',0.1);
+    'Vertices',brain_outline_patchdata.vertices, ...
+    'Faces',brain_outline_patchdata.faces, ...
+    'FaceColor',[0.5,0.5,0.5],'EdgeColor','none','FaceAlpha',0.1);
 
 view([30,150]);
 caxis([0 300]);
@@ -327,7 +338,7 @@ gui_data = guidata(probe_atlas_gui);
 
 switch eventdata.Key
     case {'rightarrow','leftarrow','uparrow','downarrow'}
-        % Update the probe info/slice on arrow release 
+        % Update the probe info/slice on arrow release
         update_probe_coordinates(probe_atlas_gui);
         update_slice(probe_atlas_gui);
 end
@@ -371,7 +382,7 @@ if strcmp(gui_data.handles.slice_plot(1).Visible,'on')
     % Define a plane of points to index
     % (the plane grid is defined based on the which cardinal plan is most
     % orthogonal to the plotted plane. this is janky but it works)
-    slice_px_space = 3;    
+    slice_px_space = 3;
     [~,cam_plane] = max(abs(normal_vector./norm(normal_vector)));
     switch cam_plane
         case 1
@@ -393,9 +404,9 @@ if strcmp(gui_data.handles.slice_plot(1).Visible,'on')
                 gui_data.ap_coords(1:slice_px_space:end));
             plane_dv = ...
                 (normal_vector(2)*plane_ap+normal_vector(1)*plane_ml + plane_offset)/ ...
-                -normal_vector(3);       
+                -normal_vector(3);
     end
-
+    
     % Grab pixels from (selected) volume
     switch gui_data.handles.slice_volume
         case 'tv'
@@ -427,7 +438,7 @@ if strcmp(gui_data.handles.slice_plot(1).Visible,'on')
             colormap(gui_data.handles.axes_atlas,gui_data.cmap);
             caxis(gui_data.handles.axes_atlas,[1,size(gui_data.cmap,1)]);
     end
-   
+    
     % Update the slice display
     set(gui_data.handles.slice_plot, ...
         'XData',plane_ml,'YData',plane_ap,'ZData',plane_dv,'CData',curr_slice);
@@ -454,7 +465,7 @@ prompt_text = { ...
 
 new_probe_position_input = inputdlg(prompt_text,'Set probe position',1);
 if any(cellfun(@isempty,new_probe_position_input))
-   error('Not all coordinates entered'); 
+    error('Not all coordinates entered');
 end
 new_probe_position = cellfun(@str2num,new_probe_position_input);
 
@@ -516,7 +527,7 @@ prompt_text = { ...
 
 new_probe_position_input = inputdlg(prompt_text,'Set probe position',1);
 if any(cellfun(@isempty,new_probe_position_input))
-   error('Not all coordinates entered'); 
+    error('Not all coordinates entered');
 end
 new_probe_position = cellfun(@str2num,new_probe_position_input);
 
@@ -572,14 +583,14 @@ probe_vector = cell2mat(get(gui_data.handles.probe_line,{'XData','YData','ZData'
 % % Set new angle
 % new_angle = gui_data.probe_angle + angle_change;
 % gui_data.probe_angle = new_angle;
-% 
+%
 % [ap_max,dv_max,ml_max] = size(gui_data.tv);
-% 
+%
 % max_ref_length = sqrt(sum(([ap_max,dv_max,ml_max].^2)));
-% 
+%
 % probe_angle_rad = (gui_data.probe_angle./360)*2*pi;
 % [x,y,z] = sph2cart(pi-probe_angle_rad(1),probe_angle_rad(2),max_ref_length);
-% 
+%
 % new_probe_ref_top = [probe_ref_vector(1,1),probe_ref_vector(2,1),0];
 % new_probe_ref_bottom = new_probe_ref_top + [x,y,z];
 % new_probe_ref_vector = [new_probe_ref_top;new_probe_ref_bottom]';
@@ -689,7 +700,7 @@ set(gui_data.probe_coordinates_text,'String',probe_text);
 
 % Update the probe areas
 yyaxis(gui_data.handles.axes_probe_areas,'right');
-set(gui_data.handles.probe_areas_plot,'YData',probe_coords_depth,'CData',probe_areas); 
+set(gui_data.handles.probe_areas_plot,'YData',probe_coords_depth,'CData',probe_areas);
 set(gui_data.handles.axes_probe_areas,'YTick',probe_area_centers,'YTickLabels',probe_area_labels);
 
 % Upload gui_data
@@ -786,9 +797,9 @@ if ~isempty(plot_structure)
     plot_structure_color = hex2dec(reshape(gui_data.st.color_hex_triplet{plot_structure},2,[])')./255;
     
     [curr_ml_grid,curr_ap_grid,curr_dv_grid] = ...
-    ndgrid(gui_data.ml_coords(1:slice_spacing:end), ...
-    gui_data.ap_coords(1:slice_spacing:end), ...
-    gui_data.dv_coords(1:slice_spacing:end));
+        ndgrid(gui_data.ml_coords(1:slice_spacing:end), ...
+        gui_data.ap_coords(1:slice_spacing:end), ...
+        gui_data.dv_coords(1:slice_spacing:end));
     
     structure_3d = isosurface(curr_ml_grid,curr_ap_grid,curr_dv_grid, ...
         permute(ismember(gui_data.av(1:slice_spacing:end, ...
@@ -942,54 +953,64 @@ gui_data = guidata(probe_atlas_gui);
 [probe_file,probe_path] = uigetfile('*.mat','Choose probe coordinate file');
 load([probe_path,probe_file]);
 
-if exist('pointList','var')
-    histology_points = pointList.pointList{1};
-elseif exist('probe_ccf','var')
-    histology_points = probe_ccf(1).points; % only use first probe
+nProbes = length( probe_ccf );
+for prIdx = 1 : nProbes
+    if exist('pointList','var')
+        histology_points = pointList.pointList{1};
+        
+    elseif exist('probe_ccf','var')
+        histology_points = probe_ccf( prIdx ).points;
+        
+    end
+    
+    r0 = mean(histology_points,1);
+    xyz = bsxfun(@minus,histology_points,r0);
+    [~,~,V] = svd(xyz,0);
+    histology_probe_direction = V(:,1);
+    
+    probe_eval_points = [-1000,1000];
+    probe_line_endpoints = bsxfun(@plus,bsxfun(@times,probe_eval_points',histology_probe_direction'),r0);
+    
+    % Philip's GUI: not saved in native CCF order?
+    % plot3(histology_points(:,3),histology_points(:,1),histology_points(:,2),'.b','MarkerSize',20);
+    % line(P(:,3),P(:,1),P(:,2),'color','k','linewidth',2)
+    
+    % % Mine: saved in native CCF order [AP,DV,ML]
+    plot3(gui_data.handles.axes_atlas, ...
+        histology_points(:,1),histology_points(:,3),histology_points(:,2),'.b','MarkerSize',15);
+    line(gui_data.handles.axes_atlas, ...
+        probe_line_endpoints(:,1),probe_line_endpoints(:,3),probe_line_endpoints(:,2),...
+        'color', 'k',...
+        'linewidth', 2,... 
+        'linestyle', '--' )
+        
+    
+    % Place the probe on the histology best-fit axis
+%     [ap_max,dv_max,ml_max] = size(gui_data.tv);
+%     
+%     probe_ref_top = probe_line_endpoints(1,[1,3,2]);
+%     probe_ref_bottom = probe_line_endpoints(2,[1,3,2]);
+%     probe_ref_vector = [probe_ref_top;probe_ref_bottom]';
+%     
+%     set(gui_data.handles.probe_ref_line,'XData',probe_ref_vector(1,:), ...
+%         'YData',probe_ref_vector(2,:), ...
+%         'ZData',probe_ref_vector(3,:));
+%     
+%     probe_vector = [probe_ref_vector(:,1),diff(probe_ref_vector,[],2)./ ...
+%         norm(diff(probe_ref_vector,[],2))*gui_data.probe_length + probe_ref_vector(:,1)];
+%     set(gui_data.handles.probe_line,'XData',probe_vector(1,:), ...
+%         'YData',probe_vector(2,:),'ZData',probe_vector(3,:));
+%     
+%     % Upload gui_data
+%     [theta,phi] = cart2sph(diff(probe_ref_vector(1,:)),diff(probe_ref_vector(2,:)),diff(probe_ref_vector(3,:)));
+%     gui_data.probe_angle = ([theta,phi]/(2*pi))*360;
+%     guidata(probe_atlas_gui, gui_data);
+%     
+%     % Update the slice and probe coordinates
+%     update_slice(probe_atlas_gui);
+%     update_probe_coordinates(probe_atlas_gui);
+    
 end
-
-r0 = mean(histology_points,1);
-xyz = bsxfun(@minus,histology_points,r0);
-[~,~,V] = svd(xyz,0);
-histology_probe_direction = V(:,1);
-
-probe_eval_points = [-1000,1000];
-probe_line_endpoints = bsxfun(@plus,bsxfun(@times,probe_eval_points',histology_probe_direction'),r0);
-
-% Philip's GUI: not saved in native CCF order?
-% plot3(histology_points(:,3),histology_points(:,1),histology_points(:,2),'.b','MarkerSize',20);
-% line(P(:,3),P(:,1),P(:,2),'color','k','linewidth',2)
-
-% % Mine: saved in native CCF order [AP,DV,ML]
-plot3(gui_data.handles.axes_atlas, ...
-    histology_points(:,1),histology_points(:,3),histology_points(:,2),'.b','MarkerSize',20);
-line(gui_data.handles.axes_atlas, ...
-    probe_line_endpoints(:,1),probe_line_endpoints(:,3),probe_line_endpoints(:,2),'color','k','linewidth',2)
-
-% Place the probe on the histology best-fit axis
-[ap_max,dv_max,ml_max] = size(gui_data.tv);
-
-probe_ref_top = probe_line_endpoints(1,[1,3,2]);
-probe_ref_bottom = probe_line_endpoints(2,[1,3,2]);
-probe_ref_vector = [probe_ref_top;probe_ref_bottom]';
-
-set(gui_data.handles.probe_ref_line,'XData',probe_ref_vector(1,:), ...
-    'YData',probe_ref_vector(2,:), ...
-    'ZData',probe_ref_vector(3,:));
-
-probe_vector = [probe_ref_vector(:,1),diff(probe_ref_vector,[],2)./ ...
-    norm(diff(probe_ref_vector,[],2))*gui_data.probe_length + probe_ref_vector(:,1)];
-set(gui_data.handles.probe_line,'XData',probe_vector(1,:), ...
-    'YData',probe_vector(2,:),'ZData',probe_vector(3,:));
-
-% Upload gui_data
-[theta,phi] = cart2sph(diff(probe_ref_vector(1,:)),diff(probe_ref_vector(2,:)),diff(probe_ref_vector(3,:)));
-gui_data.probe_angle = ([theta,phi]/(2*pi))*360;
-guidata(probe_atlas_gui, gui_data);
-
-% Update the slice and probe coordinates
-update_slice(probe_atlas_gui);
-update_probe_coordinates(probe_atlas_gui);
 
 end
 
@@ -1006,9 +1027,9 @@ end
 
 [~, fnBase] = fileparts(fn);
 if ~isempty(strfind(fnBase, '2017'))
-    mode = '2017'; 
+    mode = '2017';
 else
-    mode = 'old'; 
+    mode = 'old';
 end
 
 fid = fopen(fn, 'r');
@@ -1025,15 +1046,15 @@ elseif strcmp(mode, '2017')
     titles = cellfun(@(x)x{1}, titles, 'uni', false);
     
     data = textscan(fid, ['%d%d%s%s'... % 'id'    'atlas_id'    'name'    'acronym'
-                          '%s%d%d%d'... % 'st_level'    'ontology_id'    'hemisphere_id'    'weight'
-                          '%d%d%d%d'... % 'parent_structure_id'    'depth'    'graph_id'     'graph_order'
-                          '%s%s%d%s'... % 'structure_id_path'    'color_hex_triplet' neuro_name_structure_id neuro_name_structure_id_path
-                          '%s%d%d%d'... % 'failed'    'sphinx_id' structure_name_facet failed_facet
-                          '%s'], 'delimiter', ','); % safe_name
+        '%s%d%d%d'... % 'st_level'    'ontology_id'    'hemisphere_id'    'weight'
+        '%d%d%d%d'... % 'parent_structure_id'    'depth'    'graph_id'     'graph_order'
+        '%s%s%d%s'... % 'structure_id_path'    'color_hex_triplet' neuro_name_structure_id neuro_name_structure_id_path
+        '%s%d%d%d'... % 'failed'    'sphinx_id' structure_name_facet failed_facet
+        '%s'], 'delimiter', ','); % safe_name
     
     titles = ['index' titles];
-    data = [[0:numel(data{1})-1]' data];    
-
+    data = [[0:numel(data{1})-1]' data];
+    
 end
 
 
@@ -1050,7 +1071,7 @@ function selIdx = hierarchical_select(st)
 
 selID = 567; % Cerebrum, default to start
 
-[boxList, idList] = makeBoxList(st, selID); 
+[boxList, idList] = makeBoxList(st, selID);
 
 ud.idList = idList; ud.st = st;
 
@@ -1061,20 +1082,20 @@ f = figure; set(f, 'KeyPressFcn', @hierarchical_select_ok);
 ud.hBox = uicontrol(f, 'Style', 'listbox', 'String', boxList, ...
     'Callback', @hierarchical_select_update, 'Value', find(idList==selID),...
     'Units', 'normalized', 'Position', [0.1 0.2 0.8 0.7],...
-    'KeyPressFcn', @hierarchical_select_ok); 
+    'KeyPressFcn', @hierarchical_select_ok);
 
 titleStr = boxList{idList==selID}; titleStr = titleStr(find(titleStr~=' ', 1):end);
 ud.hSelTitle = uicontrol(f, 'Style', 'text', ...
     'String', sprintf('Selected: %s', titleStr), ...
-    'Units', 'normalized', 'Position', [0.1 0.9 0.8 0.1]); 
+    'Units', 'normalized', 'Position', [0.1 0.9 0.8 0.1]);
 
 ud.hCancel = uicontrol(f, 'Style', 'pushbutton', ...
     'String', 'Cancel', 'Callback', @hierarchical_select_cancel, ...
-    'Units', 'normalized', 'Position', [0.1 0.1 0.2 0.1]); 
+    'Units', 'normalized', 'Position', [0.1 0.1 0.2 0.1]);
 
 ud.hOK = uicontrol(f, 'Style', 'pushbutton', ...
     'String', 'OK', 'Callback', @hierarchical_select_ok, ...
-    'Units', 'normalized', 'Position', [0.3 0.1 0.2 0.1]); 
+    'Units', 'normalized', 'Position', [0.3 0.1 0.2 0.1]);
 
 set(f, 'UserData', ud);
 drawnow;
@@ -1084,16 +1105,16 @@ uiwait(f);
 if ishghandle(f)
     ud = get(f, 'UserData');
     idList = ud.idList;
-
+    
     if ud.hBox.Value>1
         selID = idList(get(ud.hBox, 'Value'));
-
+        
         selIdx = find(st.id==selID);
     else
         selIdx = [];
     end
     delete(f)
-    drawnow; 
+    drawnow;
 else
     selIdx = [];
 end
@@ -1130,13 +1151,13 @@ end
 
 function hierarchical_select_update(src, ~)
 
-f = get(src, 'Parent'); 
+f = get(src, 'Parent');
 ud = get(f, 'UserData');
 st = ud.st; idList = ud.idList;
 
 selID = idList(get(src, 'Value'));
 
-[boxList, idList] = makeBoxList(st, selID); 
+[boxList, idList] = makeBoxList(st, selID);
 
 ud.idList = idList;
 set(f, 'UserData', ud);
@@ -1149,7 +1170,7 @@ end
 
 % OK callback
 function hierarchical_select_ok(~, ~)
-    uiresume(gcbf);
+uiresume(gcbf);
 end
 
 % Cancel callback
