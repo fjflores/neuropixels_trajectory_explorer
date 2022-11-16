@@ -1,18 +1,22 @@
+[![DOI](https://zenodo.org/badge/429406115.svg)](https://zenodo.org/badge/latestdoi/429406115)
+
 # Neuropixels trajectory explorer
-Neuropixels trajectory explorer with the Allen CCF mouse atlas. See changelog below for history of updates.
+Neuropixels trajectory explorer with the Allen CCF mouse atlas or Waxholm rat atlas. See changelog below for history of updates.
 
-**FUTURE UPDATES:** The coordinates in this program will be updated in the (hopefully) near future following comparisons between the CCF and MRI data: this will likely include size, scaling, and rotation. 
+**Keep the GUI up-to-date:** there are semi-regular upgrades (sometimes just a feature, sometimes something critical like getting a better estimate of distances and angles), so make sure to pull the current repository whenever planning a new trajectory.
 
-**NOTE ON SCALING AND ROTATION:** The Allen CCF mouse atlas is slightly stretched in the DV axis compared to the average brain, and is currently scaled at 94.5%. This is provisional, and will be updated in the future based on CCF/MRI alignment. It is also estimated that the angle between bregma and lambda is >5 degrees in the CCF, this is not implemented yet but will be once it is more accurately estimated.
-
-**NOTE ON BREGMA:** Bregma has been approximated in AP by matching the Paxinos atlas slice at AP=0 to the CCF, the ML position is the midline, and the DV position is a very rough approximation from matching an MRI image.
+Mouse CCF scaling, rotation, and bregma notes:
+* the CCF is slightly stretched in the DV axis (because it's based on a single mouse with an unsually tall brain), currently estimated here as 94.3%
+* The CCF AP rotation is arbitrary with reference to the skull, and this angle has been estimated as 5 degrees (from https://www.biorxiv.org/content/10.1101/2022.05.09.491042v3). This is implemented here, with the CCF being tilted nose-down by 5 degrees.
+* Bregma has been approximated in AP by matching the Paxinos atlas slice at AP=0 to the CCF, the ML position is the midline, and the DV position is a very rough approximation from matching an MRI image (this DV coordinate shouldn't be used - all actual coordinates should be measured from the brain surface for better accuracy)
 
 Any issues/bugs/suggestions, please open a github issue by clicking on the 'Issues' tab above and pressing the green 'New issue' button.
 
 ## Requirements, setup, starting
-- Download the Allen CCF mouse atlas (all files at http://data.cortexlab.net/allenCCF/)
-
+- Mouse: download the Allen CCF mouse atlas (all files at http://data.cortexlab.net/allenCCF/)
 (note on where these files came from: they are a re-formatted version of [the original atlas](http://download.alleninstitute.org/informatics-archive/current-release/mouse_ccf/annotation/ccf_2017/), which has been [processed with this script](https://github.com/cortex-lab/allenCCF/blob/master/setup_utils.m))
+
+- Rat: download the Waxholm rat atlas and unzip (https://www.nitrc.org/projects/whs-sd-atlas/)
 
 - Download/clone this repository
 
@@ -20,12 +24,18 @@ Any issues/bugs/suggestions, please open a github issue by clicking on the 'Issu
 - Download/clone the NPY-matlab repository: https://github.com/kwikteam/npy-matlab
 (this is code to load the formatted CCF atlas)
 
-- Add the folders with the CCF atlas, the NPY-matlab repository, and this repository into the MATLAB path
+- Add to MATLAB path: the folders with the atlas, the NPY-matlab repository, and this repository
 (File > Set Path > Add with subfolders... > select the downloaded folder (have to do this for each folder separately), then hit 'Save' and 'Close')
 
 - Run the command in MATLAB:
+
+Mouse:
 ```matlab
 neuropixels_trajectory_explorer
+```
+Rat: 
+```matlab
+neuropixels_trajectory_explorer_rat
 ```
 
 ### If you don't have MATLAB
@@ -67,6 +77,8 @@ These are the regions that the probe (blue line) is passing through
 ### Experimental use of Neuropixels coordinates
 The coordinates of the probe are displayed above the atlas relative to **bregma (anterior/posterior and medial/lateral)** and the **brain surface (depth, axis along the probe)**
 
+![image](https://github.com/petersaj/neuropixels_trajectory_explorer/blob/main/wiki/positions.png)
+
 The angles of the manipulator are displayed as the **azimuth (polar) relative to the line from tail to nose, where 0 degrees means the probe is coming straight from behind the mouse**, and to the **elevation (pitch) relative to the horizontal, where 90 degrees means the probe is going straight downward**.
 
 ![image](https://github.com/petersaj/neuropixels_trajectory_explorer/blob/main/wiki/angles.png)
@@ -79,4 +91,11 @@ During the experiment:
 - Zero the depth coordinate (along the probe-axis), then descend until the desired depth is reached
 
 ## Changelog
+2022-09-23: Changed CCF rotation to 5 degrees AP (clarification from IBL paper)
+2022-07-20: Updated position readout for clarification
+2022-05-20: Added rat trajectory explorer ('neuropixels_trajectory_explorer_rat')
+2022-05-18: Changed coordinate system to allow for more flexible coordinate changes in future (including user-set scalings/rotations)
+2022-05-17: Rotated CCF 7 degrees in AP to line up to a leveled bregma-lambda (angle from https://www.biorxiv.org/content/10.1101/2022.05.09.491042v3.full.pdf)
 2021-12-15: Added 'set endpoint' functionality, approximated bregma DV (from MRI - very rough)
+
+

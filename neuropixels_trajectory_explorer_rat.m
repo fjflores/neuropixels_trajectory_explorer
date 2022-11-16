@@ -4,16 +4,11 @@
 %
 % GUI for planning Neuropixels trajectories with the Allen CCF atlas
 %
-% Instructions for use:
+% Instructions for use: 
 % https://github.com/petersaj/neuropixels_trajectory_explorer
-%
-% Inputs (optional):
-% tv, av, st = CCF template volume, annotated volume, structure tree
-% (if not entered, CCF folder must be in matlab path to find)
-
 
 %% GUI setup
-function neuropixels_trajectory_explorer
+function neuropixels_trajectory_explorer_rat
 
 % Check MATLAB version
 matlab_version = version('-date');
@@ -33,55 +28,53 @@ gui_data = struct;
 % ~~~~ Load atlas and associated data
 
 % Load in atlas
-% (directory with CCF must be in matlab path to find it)
-if nargin < 3
-    % Find path with CCF
-    allen_atlas_path = fileparts(which('template_volume_10um.npy'));
-    if isempty(allen_atlas_path)
-        error('CCF atlas not in MATLAB path (click ''Set path'', add folder with CCF)');
-    end
-    % Load CCF components
-    tv = readNPY([allen_atlas_path filesep 'template_volume_10um.npy']); % grey-scale "background signal intensity"
-    av = readNPY([allen_atlas_path filesep 'annotation_volume_10um_by_index.npy']); % the number at each pixel labels the area, see note below
-    st = load_structure_tree([allen_atlas_path filesep 'structure_tree_safe_2017.csv']); % a table of what all the labels mean
+% Find path with ratlas
+atlas_path = fileparts(which('WHS_SD_rat_T2star_v1.01.nii.gz'));
+if isempty(atlas_path)
+    error('Rat atlas not in MATLAB path (click ''Set path'', add folder with CCF)');
 end
+% Load ratlas
+tv = cast(rescale(permute(niftiread(fullfile(atlas_path,'WHS_SD_rat_T2star_v1.01.nii.gz')),[2,3,1]),0,255),'uint8');
+av = permute(niftiread(fullfile(atlas_path,'WHS_SD_rat_atlas_v4.nii.gz')),[2,3,1]);
 
-% Create CCF colormap
-% (copied from cortex-lab/allenCCF/setup_utils
-ccf_color_hex = st.color_hex_triplet;
-ccf_color_hex(cellfun(@numel,ccf_color_hex)==5) = {'019399'}; % special case where leading zero was evidently dropped
-ccf_cmap_c1 = cellfun(@(x)hex2dec(x(1:2)), ccf_color_hex, 'uni', false);
-ccf_cmap_c2 = cellfun(@(x)hex2dec(x(3:4)), ccf_color_hex, 'uni', false);
-ccf_cmap_c3 = cellfun(@(x)hex2dec(x(5:6)), ccf_color_hex, 'uni', false);
-ccf_cmap = horzcat(vertcat(ccf_cmap_c1{:}),vertcat(ccf_cmap_c2{:}),vertcat(ccf_cmap_c3{:}))./255;
+% (zero tv where av not defined)
+tv(av == 0) = 0;
+
+% Load labels (made from auto-generated script)
+filename = 'C:\Users\Andrew\OneDrive for Business\Documents\Atlases\WHSrat\WHS_SD_rat_atlas_v4.label';
+startRow = 15;
+formatSpec = '%5f%6f%5f%5f%9f%3f%3f%s%[^\n\r]';
+fileID = fopen(filename,'r');
+dataArray = textscan(fileID, formatSpec, 'Delimiter', '', 'WhiteSpace', '', 'TextType', 'string', 'HeaderLines' ,startRow-1, 'ReturnOnError', false, 'EndOfLine', '\r\n');
+dataArray{8} = strtrim(dataArray{8});
+fclose(fileID);
+st_raw = table(dataArray{1:end-1}, 'VariableNames', {'index','R','G','B','A','VIS','MSH','safe_name'});
+st = table; 
+st(st_raw.index(2:end),:) = st_raw(2:end,:);
+clearvars filename startRow formatSpec fileID dataArray ans;
+
+% Create colormap
+ccf_cmap = [st.R,st.G,st.B]/255;
+
 
 % ~~~~ Make transform matrix from CCF to bregma/mm coordinates
-
-% (translation values from our bregma estimate: AP/ML from Paxinos, DV from
-% rough MRI estimate)
-bregma_ccf = [540,44,570]; % [AP,DV,ML]
+% This is in the coordinates pdf
+bregma_ccf = [635,440,246]; % [AP,DV,ML]
 ccf_translation_tform = eye(4)+[zeros(3,4);-bregma_ccf([3,1,2]),0];
 
-% (reflect AP/ML, scale DV value from Josh Siegle, convert 10um to 1mm)
-scale = [-1,-1,0.9434]./100; % [AP,ML,DV]
+% (scale voxel to mm)
+voxel2mm = 0.039;
+scale = voxel2mm./[-1,1,-1]; % [AP,ML,DV]
 ccf_scale_tform = eye(4).*[scale,1]';
 
-% (rotation values from IBL estimate)
-ap_rotation = 5; % 5 degrees nose-down
-ccf_rotation_tform = ...
-    [1 0 0 0; ...
-    0 cosd(ap_rotation) -sind(ap_rotation) 0; ...
-    0 sind(ap_rotation) cosd(ap_rotation) 0; ...
-    0 0 0 1];
-
-ccf_bregma_tform_matrix = ccf_translation_tform*ccf_rotation_tform*ccf_scale_tform;
+ccf_bregma_tform_matrix = ccf_translation_tform*ccf_scale_tform;
 ccf_bregma_tform = affine3d(ccf_bregma_tform_matrix);
 
 % ~~~~ Make GUI axes and objects
 
 % Set up the gui
 probe_atlas_gui = figure('Toolbar','none','Menubar','none','color','w', ...
-    'Name','Neuropixels Trajectory Explorer','Units','normalized','Position',[0.21,0.2,0.7,0.7]);
+    'Name','Neuropixels Trajectory Explorer (Rat)','Units','normalized','Position',[0.21,0.2,0.7,0.7]);
 
 % Set up the atlas axes
 axes_atlas = axes('Position',[-0.3,0.1,1.2,0.8],'ZDir','reverse');
@@ -105,21 +98,21 @@ brain_outline_patchdata = reducepatch(isosurface(ml_grid_bregma,ap_grid_bregma, 
     dv_grid_bregma,brain_volume,0.5),0.1);
 
 brain_outline = patch( ...
-    'Vertices',brain_outline_patchdata.vertices, ...
-    'Faces',brain_outline_patchdata.faces, ...
-    'FaceColor',[0.5,0.5,0.5],'EdgeColor','none','FaceAlpha',0.1);
+        'Vertices',brain_outline_patchdata.vertices, ...
+        'Faces',brain_outline_patchdata.faces, ...
+        'FaceColor',[0.5,0.5,0.5],'EdgeColor','none','FaceAlpha',0.1);
 
 view([30,150]);
-caxis([0 300]);
+caxis([1,size(ccf_cmap,1)]);
 
-xlim([-5.2,5.2]);set(gca,'XTick',-5:0.5:5);
-ylim([-8.5,5]);set(gca,'YTick',-8.5:0.5:5);
-zlim([-1,6.5]);set(gca,'ZTick',-1:0.5:6.5);
+xlim(prctile(ml_grid_bregma(:),[0,100]));
+ylim(prctile(ap_grid_bregma(:),[0,100]));
+zlim(prctile(dv_grid_bregma(:),[0,100]));
 grid on;
 
 % Set up the probe reference/actual
 probe_ref_top = [0,0,-0.1];
-probe_ref_bottom = [0,0,6];
+probe_ref_bottom = [0,0,prctile(dv_grid_bregma(:),100)];
 probe_ref_vector = [probe_ref_top',probe_ref_bottom'];
 probe_ref_line = line(probe_ref_vector(1,:),probe_ref_vector(2,:),probe_ref_vector(3,:), ...
     'linewidth',1.5,'color','r','linestyle','--');
@@ -133,22 +126,21 @@ probe_line = line(probe_vector(1,:),probe_vector(2,:),probe_vector(3,:), ...
 % Set up the text to display coordinates
 probe_coordinates_text = uicontrol('Style','text','String','', ...
     'Units','normalized','Position',[0,0.9,0.5,0.1], ...
-    'BackgroundColor','w','HorizontalAlignment','left','FontSize',12, ...
-    'FontName','Consolas');
+    'BackgroundColor','w','HorizontalAlignment','left','FontSize',12);
 
 % Set up the probe area axes
 axes_probe_areas = axes('Position',[0.7,0.1,0.03,0.8]);
-axes_probe_areas.ActivePositionProperty = 'position';
 set(axes_probe_areas,'FontSize',11);
 yyaxis(axes_probe_areas,'left');
-probe_areas_plot = image(0);
+probe_areas_plot = imagesc(0);
 set(axes_probe_areas,'XTick','','YLim',[0,probe_length],'YColor','k','YDir','reverse');
 ylabel(axes_probe_areas,'Depth (mm)');
 yyaxis(axes_probe_areas,'right');
 set(axes_probe_areas,'XTick','','YLim',[0,probe_length],'YColor','k','YDir','reverse');
 title(axes_probe_areas,'Probe areas');
+
+caxis(axes_probe_areas,[1,size(ccf_cmap,1)]);
 colormap(axes_probe_areas,ccf_cmap);
-caxis([1,size(ccf_cmap,1)]);
 
 % Store data
 gui_data.tv = tv; % Intensity atlas
@@ -244,8 +236,6 @@ controls_h(end+1) = uicontrol('Parent',control_panel,'Style','pushbutton','FontS
     'Units','normalized','Position',button_position,'String','List areas','Callback',{@add_area_list,probe_atlas_gui});
 controls_h(end+1) = uicontrol('Parent',control_panel,'Style','pushbutton','FontSize',button_fontsize, ...
     'Units','normalized','Position',button_position,'String','Search areas','Callback',{@add_area_search,probe_atlas_gui});
-controls_h(end+1) = uicontrol('Parent',control_panel,'Style','pushbutton','FontSize',button_fontsize, ...
-    'Units','normalized','Position',button_position,'String','Hierarchy areas','Callback',{@add_area_hierarchy,probe_atlas_gui});
 controls_h(end+1) = uicontrol('Parent',control_panel,'Style','pushbutton','FontSize',button_fontsize, ...
     'Units','normalized','Position',button_position,'String','Remove areas','Callback',{@remove_area,probe_atlas_gui});
 
@@ -368,7 +358,7 @@ gui_data = guidata(probe_atlas_gui);
 
 switch eventdata.Key
     case {'rightarrow','leftarrow','uparrow','downarrow'}
-        % Update the probe info/slice on arrow release
+        % Update the probe info/slice on arrow release 
         update_probe_coordinates(probe_atlas_gui);
         update_slice(probe_atlas_gui);
 end
@@ -412,15 +402,11 @@ if strcmp(gui_data.handles.slice_plot(1).Visible,'on')
     % Define a plane of points to index
     % (the plane grid is defined based on the which cardinal plan is most
     % orthogonal to the plotted plane. this is janky but it works)
-<<<<<<< HEAD
-    slice_px_space = 3;
-=======
     ml_lim = xlim(gui_data.handles.axes_atlas);
     ap_lim = ylim(gui_data.handles.axes_atlas);
     dv_lim = zlim(gui_data.handles.axes_atlas);
 
-    slice_px_space = 0.01; % resolution of slice to grab
->>>>>>> 247bb95cb47990b33bc2d82c3e88591703c08007
+    slice_px_space = 0.05; % resolution of slice to grab
     [~,cam_plane] = max(abs(normal_vector./norm(normal_vector)));
     switch cam_plane
         case 1
@@ -440,15 +426,6 @@ if strcmp(gui_data.handles.slice_plot(1).Visible,'on')
                 -normal_vector(2);    
             
         case 3
-<<<<<<< HEAD
-            [plane_ml,plane_ap] = ndgrid(gui_data.ml_coords(1:slice_px_space:end), ...
-                gui_data.ap_coords(1:slice_px_space:end));
-            plane_dv = ...
-                (normal_vector(2)*plane_ap+normal_vector(1)*plane_ml + plane_offset)/ ...
-                -normal_vector(3);
-    end
-    
-=======
             [plane_ml_bregma,plane_ap_bregma] = ndgrid(...
                 ml_lim(1):slice_px_space:ml_lim(2),...
                 ap_lim(1):slice_px_space:ap_lim(2));
@@ -461,41 +438,35 @@ if strcmp(gui_data.handles.slice_plot(1).Visible,'on')
     [plane_ml_ccf,plane_ap_ccf,plane_dv_ccf] = ...
         transformPointsInverse(gui_data.ccf_bregma_tform,plane_ml_bregma,plane_ap_bregma,plane_dv_bregma);
 
->>>>>>> 247bb95cb47990b33bc2d82c3e88591703c08007
     % Grab pixels from (selected) volume
-    plane_coords = ...
-        round([plane_ap_ccf(:),plane_dv_ccf(:),plane_ml_ccf(:)]);
-    plane_coords_inbounds = all(plane_coords > 0 & ...
-        plane_coords <= size(gui_data.tv),2);
-
-    plane_idx = sub2ind(size(gui_data.tv), ...
-        plane_coords(plane_coords_inbounds,1), ...
-        plane_coords(plane_coords_inbounds,2), ...
-        plane_coords(plane_coords_inbounds,3));
-
+    atlas_downsample = 3; % (downsample atlas to make this faster)
     switch gui_data.handles.slice_volume
         case 'tv'
-            curr_slice = nan(size(plane_ap_ccf));
-            curr_slice(plane_coords_inbounds) = gui_data.tv(plane_idx);
+            curr_slice = single(interpn( ...
+                imresize3(gui_data.tv,1/atlas_downsample,'nearest'), ...
+                plane_ap_ccf/atlas_downsample, ...
+                plane_dv_ccf/atlas_downsample, ...
+                plane_ml_ccf/atlas_downsample,'nearest'));
             curr_slice(curr_slice < 20) = NaN; % threshold values
 
             colormap(gui_data.handles.axes_atlas,'gray');
             caxis(gui_data.handles.axes_atlas,[0,255]);
-            
         case 'av'
-            curr_slice = nan(size(plane_ap_ccf));
-            curr_slice(plane_coords_inbounds) = gui_data.av(plane_idx);
-            curr_slice(curr_slice <= 1) = NaN; % threshold values
-        
+            curr_slice = single(interpn( ...
+                imresize3(gui_data.av,1/atlas_downsample,'nearest'), ...
+                plane_ap_ccf/atlas_downsample, ...
+                plane_dv_ccf/atlas_downsample, ...
+                plane_ml_ccf/atlas_downsample,'nearest'));
+            curr_slice(curr_slice <= 1) = NaN;
+            
             colormap(gui_data.handles.axes_atlas,gui_data.cmap);
             caxis(gui_data.handles.axes_atlas,[1,size(gui_data.cmap,1)]);
     end
-    
+   
     % Update the slice display
     set(gui_data.handles.slice_plot, ...
         'XData',plane_ml_bregma,'YData',plane_ap_bregma,'ZData',plane_dv_bregma,'CData',curr_slice);
-    drawnow;
-
+    
     % Upload gui_data
     guidata(probe_atlas_gui, gui_data);
     
@@ -518,7 +489,7 @@ prompt_text = { ...
 
 new_probe_position_input = inputdlg(prompt_text,'Set probe position',1);
 if any(cellfun(@isempty,new_probe_position_input))
-    error('Not all coordinates entered');
+   error('Not all coordinates entered'); 
 end
 new_probe_position = cellfun(@str2num,new_probe_position_input);
 
@@ -530,7 +501,7 @@ ml_lim = xlim(gui_data.handles.axes_atlas);
 ap_lim = ylim(gui_data.handles.axes_atlas);
 dv_lim = zlim(gui_data.handles.axes_atlas);
 max_ref_length = norm([range(ap_lim);range(dv_lim);range(ml_lim)]);
-[y,x,z] = sph2cart(pi+probe_angle_rad(1),pi-probe_angle_rad(2),max_ref_length);
+[y,x,z] = sph2cart(pi-probe_angle_rad(1),pi-probe_angle_rad(2),max_ref_length);
 
 % Get top of probe reference with user brain intersection point
 % (get DV location of brain surface at chosen ML/AP point)
@@ -594,7 +565,7 @@ prompt_text = { ...
 
 new_probe_position_input = inputdlg(prompt_text,'Set probe position',1);
 if any(cellfun(@isempty,new_probe_position_input))
-    error('Not all coordinates entered');
+   error('Not all coordinates entered'); 
 end
 new_probe_position = cellfun(@str2num,new_probe_position_input);
 
@@ -602,11 +573,8 @@ new_probe_position = cellfun(@str2num,new_probe_position_input);
 probe_angle_rad = (new_probe_position(4:5)/360)*2*pi;
 
 % Update the probe and trajectory reference
-ml_lim = xlim(gui_data.handles.axes_atlas);
-ap_lim = ylim(gui_data.handles.axes_atlas);
-dv_lim = zlim(gui_data.handles.axes_atlas);
-max_ref_length = norm([range(ap_lim);range(dv_lim);range(ml_lim)]);
-[y,x,z] = sph2cart(pi+probe_angle_rad(1),pi-probe_angle_rad(2),max_ref_length);
+max_ref_length = norm([max(gui_data.ap_coords);max(gui_data.dv_coords);max(gui_data.ml_coords)]);
+[y,x,z] = sph2cart(pi-probe_angle_rad(1),pi-probe_angle_rad(2),max_ref_length);
 
 % Move probe reference (draw line through point and DV 0 with max length)
 probe_ref_top_ap = interp1(new_probe_position(3)+[0,z],new_probe_position(1)+[0,y],0,'linear','extrap');
@@ -653,14 +621,14 @@ probe_vector = cell2mat(get(gui_data.handles.probe_line,{'XData','YData','ZData'
 % % Set new angle
 % new_angle = gui_data.probe_angle + angle_change;
 % gui_data.probe_angle = new_angle;
-%
+% 
 % [ap_max,dv_max,ml_max] = size(gui_data.tv);
-%
+% 
 % max_ref_length = sqrt(sum(([ap_max,dv_max,ml_max].^2)));
-%
+% 
 % probe_angle_rad = (gui_data.probe_angle./360)*2*pi;
 % [x,y,z] = sph2cart(pi-probe_angle_rad(1),probe_angle_rad(2),max_ref_length);
-%
+% 
 % new_probe_ref_top = [probe_ref_vector(1,1),probe_ref_vector(2,1),0];
 % new_probe_ref_bottom = new_probe_ref_top + [x,y,z];
 % new_probe_ref_vector = [new_probe_ref_top;new_probe_ref_bottom]';
@@ -672,7 +640,7 @@ new_probe_ref_vector = [probe_ref_vector(:,1), ...
 % (calculate angle with flipped x/y and -y to make zero be forward midline)
 [probe_azimuth,probe_elevation] = cart2sph( ...
     diff(fliplr(-new_probe_ref_vector(2,:))), ...
-    diff(fliplr(-new_probe_ref_vector(1,:))), ...
+    diff(fliplr(new_probe_ref_vector(1,:))), ...
     diff(fliplr(-new_probe_ref_vector(3,:))));
 gui_data.probe_angle = [probe_azimuth,probe_elevation]*(360/(2*pi));
 
@@ -706,13 +674,13 @@ gui_data = guidata(probe_atlas_gui);
 probe_ref_vector = cell2mat(get(gui_data.handles.probe_ref_line,{'XData','YData','ZData'})');
 probe_vector = cell2mat(get(gui_data.handles.probe_line,{'XData','YData','ZData'})');
 
-trajectory_n_coords = round(max(abs(diff(probe_ref_vector,[],2)))*100); % 10um resolution
+trajectory_n_coords = max(abs(diff(probe_ref_vector,[],2)))*1000; % 1um resolution
 [trajectory_ml_coords_bregma,trajectory_ap_coords_bregma,trajectory_dv_coords_bregma] = deal( ...
     linspace(probe_ref_vector(1,1),probe_ref_vector(1,2),trajectory_n_coords), ...
     linspace(probe_ref_vector(2,1),probe_ref_vector(2,2),trajectory_n_coords), ...
     linspace(probe_ref_vector(3,1),probe_ref_vector(3,2),trajectory_n_coords));
 
-probe_n_coords = round(sqrt(sum(diff(probe_vector,[],2).^2))*100); % 10um resolution along active sites
+probe_n_coords = sqrt(sum(diff(probe_vector,[],2).^2))*1000; % 1um resolution along active sites
 probe_coords_depth = linspace(0,gui_data.probe_length,probe_n_coords);
 [probe_ml_coords_bregma,probe_ap_coords_bregma,probe_dv_coords_bregma] = deal( ...
     linspace(probe_vector(1,1),probe_vector(1,2),probe_n_coords), ...
@@ -729,18 +697,12 @@ probe_coords_depth = linspace(0,gui_data.probe_length,probe_n_coords);
     probe_ml_coords_bregma,probe_ap_coords_bregma,probe_dv_coords_bregma);
 
 % Get brain labels across the probe and trajectory, and intersection with brain
-trajectory_coords_ccf = ...
-    round([trajectory_ap_coords_ccf;trajectory_dv_coords_ccf;trajectory_ml_coords_ccf]);
-trajectory_coords_ccf_inbounds = all(trajectory_coords_ccf > 0 & ...
-    trajectory_coords_ccf <= size(gui_data.av)',1);
-
-trajectory_idx = ...
-    sub2ind(size(gui_data.av), ...
-    round(trajectory_ap_coords_ccf(trajectory_coords_ccf_inbounds)), ...
-    round(trajectory_dv_coords_ccf(trajectory_coords_ccf_inbounds)), ...
-    round(trajectory_ml_coords_ccf(trajectory_coords_ccf_inbounds)));
-trajectory_areas = ones(trajectory_n_coords,1); % (out of CCF = 1: non-brain)
-trajectory_areas(trajectory_coords_ccf_inbounds) = gui_data.av(trajectory_idx);
+atlas_downsample = 3; % (downsample atlas to make this faster)
+trajectory_areas = interpn( ...
+    imresize3(gui_data.av,1/atlas_downsample,'nearest'), ...
+    trajectory_ap_coords_ccf/atlas_downsample, ...
+    trajectory_dv_coords_ccf/atlas_downsample, ...
+    trajectory_ml_coords_ccf/atlas_downsample,'nearest');
 
 trajectory_brain_idx = find(trajectory_areas > 1,1);
 trajectory_brain_intersect = ...
@@ -753,18 +715,12 @@ if isempty(trajectory_brain_intersect)
     return
 end
 
-probe_coords_ccf = ...
-    round([probe_ap_coords_ccf;probe_dv_coords_ccf;probe_ml_coords_ccf]);
-probe_coords_ccf_inbounds = all(probe_coords_ccf > 0 & ...
-    probe_coords_ccf <= size(gui_data.av)',1);
-
-probe_idx = ...
-    sub2ind(size(gui_data.av), ...
-    round(probe_ap_coords_ccf(probe_coords_ccf_inbounds)), ...
-    round(probe_dv_coords_ccf(probe_coords_ccf_inbounds)), ...
-    round(probe_ml_coords_ccf(probe_coords_ccf_inbounds)));
-probe_areas = ones(probe_n_coords,1); % (out of CCF = 1: non-brain)
-probe_areas(probe_coords_ccf_inbounds) = gui_data.av(probe_idx);
+probe_areas = interpn( ...
+    imresize3(gui_data.av,1/atlas_downsample,'nearest'), ...
+    probe_ap_coords_ccf/atlas_downsample, ...
+    probe_dv_coords_ccf/atlas_downsample, ...
+    probe_ml_coords_ccf/atlas_downsample,'nearest')';
+probe_areas(probe_areas == 0) = 1; % set 0's (out of CCF) to 1's (non-brain)
 
 probe_area_boundaries = intersect(unique([find(~isnan(probe_areas),1,'first'); ...
     find(diff(probe_areas) ~= 0);find(~isnan(probe_areas),1,'last')]),find(~isnan(probe_areas)));
@@ -774,31 +730,28 @@ probe_area_labels = gui_data.st.safe_name(probe_areas(probe_area_centers_idx));
 
 % Get coordinate from bregma and probe-axis depth from surface
 % (round to nearest 10 microns)
-probe_bregma_coordinate = trajectory_brain_intersect;
+probe_bregma_coordinate = trajectory_brain_intersect(1:2);
 probe_depth = norm(trajectory_brain_intersect - probe_vector(:,2));
 
 % Update the text
-% (manipulator angles)
-probe_angle_text = sprintf('Probe angle:     % .0f%c azimuth, % .0f%c elevation', ...
+probe_angle_text = sprintf('Probe angle: %.0f%c azimuth, %.0f%c elevation', ...
     gui_data.probe_angle(1),char(176),gui_data.probe_angle(2),char(176));
-% (probe insertion point and depth)
-probe_insertion_text = sprintf('Probe insertion: % .2f AP, % .2f ML, % .2f depth', ...
+probe_insertion_text = sprintf('Probe insertion (mm from bregma): %.2f AP, %.2f ML, %.2f Probe-axis', ...
     probe_bregma_coordinate(2),probe_bregma_coordinate(1),probe_depth);
-% (probe start/endpoints)
-recording_startpoint_text = sprintf('Recording start: % .2f AP, % .2f ML, % .2f DV', ...
-    probe_vector([2,1,3],1));
-recording_endpoint_text = sprintf('Recording end:   % .2f AP, % .2f ML, % .2f DV', ...
-    probe_vector([2,1,3],2));
+probe_endpoint_text = sprintf('(Probe endpoint (mm from bregma):  %.2f AP, %.2f ML, %.2f DV)', ...
+    probe_vector(2,2),probe_vector(1,2),probe_vector(3,2));
 
-% (combine and update)
-probe_text = {probe_angle_text,probe_insertion_text, ...
-    recording_startpoint_text,recording_endpoint_text};
+probe_text = {probe_angle_text,probe_insertion_text,probe_endpoint_text};
+
 set(gui_data.probe_coordinates_text,'String',probe_text);
 
 % Update the probe areas
 yyaxis(gui_data.handles.axes_probe_areas,'right');
-set(gui_data.handles.probe_areas_plot,'YData',probe_coords_depth,'CData',probe_areas);
+set(gui_data.handles.probe_areas_plot,'YData',probe_coords_depth,'CData',probe_areas); 
 set(gui_data.handles.axes_probe_areas,'YTick',probe_area_centers,'YTickLabels',probe_area_labels);
+
+yyaxis(gui_data.handles.axes_probe_areas,'left');
+caxis(gui_data.handles.axes_probe_areas,[1,size(gui_data.cmap,1)]);
 
 % Upload gui_data
 guidata(probe_atlas_gui, gui_data);
@@ -837,13 +790,13 @@ gui_data = guidata(probe_atlas_gui);
 % Prompt for which structures to show (only structures which are
 % labelled in the slice-spacing downsampled annotated volume)
 slice_spacing = 10;
-parsed_structures = unique(reshape(gui_data.av(1:slice_spacing:end, ...
-    1:slice_spacing:end,1:slice_spacing:end),[],1));
+parsed_structures = setdiff(unique(reshape(gui_data.av(1:slice_spacing:end, ...
+    1:slice_spacing:end,1:slice_spacing:end),[],1)),0);
 
-% plot_structure_parsed = listdlg('PromptString','Select a structure to plot:', ...
-%     'ListString',gui_data.st.safe_name(parsed_structures),'ListSize',[520,500], ...
-%     'SelectionMode','single');
-% plot_structure = parsed_structures(plot_structure_parsed);
+plot_structure_parsed = listdlg('PromptString','Select a structure to plot:', ...
+    'ListString',gui_data.st.safe_name(parsed_structures),'ListSize',[520,500], ...
+    'SelectionMode','single');
+plot_structure = parsed_structures(plot_structure_parsed);
 
 % (change: show all structures even if not parsed to allow hierarchy)
 plot_structure = listdlg('PromptString','Select a structure to plot:', ...
@@ -906,23 +859,10 @@ gui_data = guidata(probe_atlas_gui);
 if ~isempty(plot_structure)
     
     % Get all areas within and below the selected hierarchy level
-    plot_structure_id = gui_data.st.structure_id_path{plot_structure};
-    plot_ccf_idx = find(cellfun(@(x) contains(x,plot_structure_id), ...
-        gui_data.st.structure_id_path));
+    plot_ccf_idx = plot_structure;
     
-<<<<<<< HEAD
-    % plot the structure
-    slice_spacing = 5;
-    plot_structure_color = hex2dec(reshape(gui_data.st.color_hex_triplet{plot_structure},2,[])')./255;
-    
-    [curr_ml_grid,curr_ap_grid,curr_dv_grid] = ...
-        ndgrid(gui_data.ml_coords(1:slice_spacing:end), ...
-        gui_data.ap_coords(1:slice_spacing:end), ...
-        gui_data.dv_coords(1:slice_spacing:end));
-=======
     % Plot the structure
     atlas_downsample = 5; % (downsample atlas to make this faster)
->>>>>>> 247bb95cb47990b33bc2d82c3e88591703c08007
     
     [ap_grid_ccf,dv_grid_ccf,ml_grid_ccf] = ...
         ndgrid(1:atlas_downsample:size(gui_data.av,1), ...
@@ -938,7 +878,8 @@ if ~isempty(plot_structure)
         1:atlas_downsample:end,1:atlas_downsample:end),plot_ccf_idx),0);
     
     structure_alpha = 0.2;
-    plot_structure_color = hex2dec(reshape(gui_data.st.color_hex_triplet{plot_structure},2,[])')./255;
+    plot_structure_color = ...
+        [gui_data.st.R(plot_ccf_idx),gui_data.st.G(plot_ccf_idx),gui_data.st.B(plot_ccf_idx)]/255;
 
     gui_data.structure_plot_idx(end+1) = plot_structure;
     gui_data.handles.structure_patch(end+1) = patch(gui_data.handles.axes_atlas, ...
@@ -1100,64 +1041,54 @@ gui_data = guidata(probe_atlas_gui);
 [probe_file,probe_path] = uigetfile('*.mat','Choose probe coordinate file');
 load([probe_path,probe_file]);
 
-nProbes = length( probe_ccf );
-for prIdx = 1 : nProbes
-    if exist('pointList','var')
-        histology_points = pointList.pointList{1};
-        
-    elseif exist('probe_ccf','var')
-        histology_points = probe_ccf( prIdx ).points;
-        
-    end
-    
-    r0 = mean(histology_points,1);
-    xyz = bsxfun(@minus,histology_points,r0);
-    [~,~,V] = svd(xyz,0);
-    histology_probe_direction = V(:,1);
-    
-    probe_eval_points = [-1000,1000];
-    probe_line_endpoints = bsxfun(@plus,bsxfun(@times,probe_eval_points',histology_probe_direction'),r0);
-    
-    % Philip's GUI: not saved in native CCF order?
-    % plot3(histology_points(:,3),histology_points(:,1),histology_points(:,2),'.b','MarkerSize',20);
-    % line(P(:,3),P(:,1),P(:,2),'color','k','linewidth',2)
-    
-    % % Mine: saved in native CCF order [AP,DV,ML]
-    plot3(gui_data.handles.axes_atlas, ...
-        histology_points(:,1),histology_points(:,3),histology_points(:,2),'.b','MarkerSize',15);
-    line(gui_data.handles.axes_atlas, ...
-        probe_line_endpoints(:,1),probe_line_endpoints(:,3),probe_line_endpoints(:,2),...
-        'color', 'k',...
-        'linewidth', 2,... 
-        'linestyle', '--' )
-        
-    
-    % Place the probe on the histology best-fit axis
-%     [ap_max,dv_max,ml_max] = size(gui_data.tv);
-%     
-%     probe_ref_top = probe_line_endpoints(1,[1,3,2]);
-%     probe_ref_bottom = probe_line_endpoints(2,[1,3,2]);
-%     probe_ref_vector = [probe_ref_top;probe_ref_bottom]';
-%     
-%     set(gui_data.handles.probe_ref_line,'XData',probe_ref_vector(1,:), ...
-%         'YData',probe_ref_vector(2,:), ...
-%         'ZData',probe_ref_vector(3,:));
-%     
-%     probe_vector = [probe_ref_vector(:,1),diff(probe_ref_vector,[],2)./ ...
-%         norm(diff(probe_ref_vector,[],2))*gui_data.probe_length + probe_ref_vector(:,1)];
-%     set(gui_data.handles.probe_line,'XData',probe_vector(1,:), ...
-%         'YData',probe_vector(2,:),'ZData',probe_vector(3,:));
-%     
-%     % Upload gui_data
-%     [theta,phi] = cart2sph(diff(probe_ref_vector(1,:)),diff(probe_ref_vector(2,:)),diff(probe_ref_vector(3,:)));
-%     gui_data.probe_angle = ([theta,phi]/(2*pi))*360;
-%     guidata(probe_atlas_gui, gui_data);
-%     
-%     % Update the slice and probe coordinates
-%     update_slice(probe_atlas_gui);
-%     update_probe_coordinates(probe_atlas_gui);
-    
+if exist('pointList','var')
+    histology_points = pointList.pointList{1};
+elseif exist('probe_ccf','var')
+    histology_points = probe_ccf(1).points; % only use first probe
 end
+
+r0 = mean(histology_points,1);
+xyz = bsxfun(@minus,histology_points,r0);
+[~,~,V] = svd(xyz,0);
+histology_probe_direction = V(:,1);
+
+probe_eval_points = [-1000,1000];
+probe_line_endpoints = bsxfun(@plus,bsxfun(@times,probe_eval_points',histology_probe_direction'),r0);
+
+% Philip's GUI: not saved in native CCF order?
+% plot3(histology_points(:,3),histology_points(:,1),histology_points(:,2),'.b','MarkerSize',20);
+% line(P(:,3),P(:,1),P(:,2),'color','k','linewidth',2)
+
+% % Mine: saved in native CCF order [AP,DV,ML]
+plot3(gui_data.handles.axes_atlas, ...
+    histology_points(:,1),histology_points(:,3),histology_points(:,2),'.b','MarkerSize',20);
+line(gui_data.handles.axes_atlas, ...
+    probe_line_endpoints(:,1),probe_line_endpoints(:,3),probe_line_endpoints(:,2),'color','k','linewidth',2)
+
+% Place the probe on the histology best-fit axis
+[ap_max,dv_max,ml_max] = size(gui_data.tv);
+
+probe_ref_top = probe_line_endpoints(1,[1,3,2]);
+probe_ref_bottom = probe_line_endpoints(2,[1,3,2]);
+probe_ref_vector = [probe_ref_top;probe_ref_bottom]';
+
+set(gui_data.handles.probe_ref_line,'XData',probe_ref_vector(1,:), ...
+    'YData',probe_ref_vector(2,:), ...
+    'ZData',probe_ref_vector(3,:));
+
+probe_vector = [probe_ref_vector(:,1),diff(probe_ref_vector,[],2)./ ...
+    norm(diff(probe_ref_vector,[],2))*gui_data.probe_length + probe_ref_vector(:,1)];
+set(gui_data.handles.probe_line,'XData',probe_vector(1,:), ...
+    'YData',probe_vector(2,:),'ZData',probe_vector(3,:));
+
+% Upload gui_data
+[theta,phi] = cart2sph(diff(probe_ref_vector(1,:)),diff(probe_ref_vector(2,:)),diff(probe_ref_vector(3,:)));
+gui_data.probe_angle = ([theta,phi]/(2*pi))*360;
+guidata(probe_atlas_gui, gui_data);
+
+% Update the slice and probe coordinates
+update_slice(probe_atlas_gui);
+update_probe_coordinates(probe_atlas_gui);
 
 end
 
@@ -1174,9 +1105,9 @@ end
 
 [~, fnBase] = fileparts(fn);
 if ~isempty(strfind(fnBase, '2017'))
-    mode = '2017';
+    mode = '2017'; 
 else
-    mode = 'old';
+    mode = 'old'; 
 end
 
 fid = fopen(fn, 'r');
@@ -1193,15 +1124,15 @@ elseif strcmp(mode, '2017')
     titles = cellfun(@(x)x{1}, titles, 'uni', false);
     
     data = textscan(fid, ['%d%d%s%s'... % 'id'    'atlas_id'    'name'    'acronym'
-        '%s%d%d%d'... % 'st_level'    'ontology_id'    'hemisphere_id'    'weight'
-        '%d%d%d%d'... % 'parent_structure_id'    'depth'    'graph_id'     'graph_order'
-        '%s%s%d%s'... % 'structure_id_path'    'color_hex_triplet' neuro_name_structure_id neuro_name_structure_id_path
-        '%s%d%d%d'... % 'failed'    'sphinx_id' structure_name_facet failed_facet
-        '%s'], 'delimiter', ','); % safe_name
+                          '%s%d%d%d'... % 'st_level'    'ontology_id'    'hemisphere_id'    'weight'
+                          '%d%d%d%d'... % 'parent_structure_id'    'depth'    'graph_id'     'graph_order'
+                          '%s%s%d%s'... % 'structure_id_path'    'color_hex_triplet' neuro_name_structure_id neuro_name_structure_id_path
+                          '%s%d%d%d'... % 'failed'    'sphinx_id' structure_name_facet failed_facet
+                          '%s'], 'delimiter', ','); % safe_name
     
     titles = ['index' titles];
-    data = [[0:numel(data{1})-1]' data];
-    
+    data = [[0:numel(data{1})-1]' data];    
+
 end
 
 
@@ -1218,7 +1149,7 @@ function selIdx = hierarchical_select(st)
 
 selID = 567; % Cerebrum, default to start
 
-[boxList, idList] = makeBoxList(st, selID);
+[boxList, idList] = makeBoxList(st, selID); 
 
 ud.idList = idList; ud.st = st;
 
@@ -1229,20 +1160,20 @@ f = figure; set(f, 'KeyPressFcn', @hierarchical_select_ok);
 ud.hBox = uicontrol(f, 'Style', 'listbox', 'String', boxList, ...
     'Callback', @hierarchical_select_update, 'Value', find(idList==selID),...
     'Units', 'normalized', 'Position', [0.1 0.2 0.8 0.7],...
-    'KeyPressFcn', @hierarchical_select_ok);
+    'KeyPressFcn', @hierarchical_select_ok); 
 
 titleStr = boxList{idList==selID}; titleStr = titleStr(find(titleStr~=' ', 1):end);
 ud.hSelTitle = uicontrol(f, 'Style', 'text', ...
     'String', sprintf('Selected: %s', titleStr), ...
-    'Units', 'normalized', 'Position', [0.1 0.9 0.8 0.1]);
+    'Units', 'normalized', 'Position', [0.1 0.9 0.8 0.1]); 
 
 ud.hCancel = uicontrol(f, 'Style', 'pushbutton', ...
     'String', 'Cancel', 'Callback', @hierarchical_select_cancel, ...
-    'Units', 'normalized', 'Position', [0.1 0.1 0.2 0.1]);
+    'Units', 'normalized', 'Position', [0.1 0.1 0.2 0.1]); 
 
 ud.hOK = uicontrol(f, 'Style', 'pushbutton', ...
     'String', 'OK', 'Callback', @hierarchical_select_ok, ...
-    'Units', 'normalized', 'Position', [0.3 0.1 0.2 0.1]);
+    'Units', 'normalized', 'Position', [0.3 0.1 0.2 0.1]); 
 
 set(f, 'UserData', ud);
 drawnow;
@@ -1252,16 +1183,16 @@ uiwait(f);
 if ishghandle(f)
     ud = get(f, 'UserData');
     idList = ud.idList;
-    
+
     if ud.hBox.Value>1
         selID = idList(get(ud.hBox, 'Value'));
-        
+
         selIdx = find(st.id==selID);
     else
         selIdx = [];
     end
     delete(f)
-    drawnow;
+    drawnow; 
 else
     selIdx = [];
 end
@@ -1298,13 +1229,13 @@ end
 
 function hierarchical_select_update(src, ~)
 
-f = get(src, 'Parent');
+f = get(src, 'Parent'); 
 ud = get(f, 'UserData');
 st = ud.st; idList = ud.idList;
 
 selID = idList(get(src, 'Value'));
 
-[boxList, idList] = makeBoxList(st, selID);
+[boxList, idList] = makeBoxList(st, selID); 
 
 ud.idList = idList;
 set(f, 'UserData', ud);
@@ -1317,7 +1248,7 @@ end
 
 % OK callback
 function hierarchical_select_ok(~, ~)
-uiresume(gcbf);
+    uiresume(gcbf);
 end
 
 % Cancel callback
