@@ -36,7 +36,8 @@ gui_data = struct;
 % (directory with CCF must be in matlab path to find it)
 if nargin < 3
     % Find path with CCF
-    allen_atlas_path = fileparts(which('template_volume_10um.npy'));
+%     allen_atlas_path = fileparts(which('template_volume_10um.npy'));
+    allen_atlas_path = getallenpath();
     if isempty(allen_atlas_path)
         error('CCF atlas not in MATLAB path (click ''Set path'', add folder with CCF)');
     end
@@ -412,15 +413,13 @@ if strcmp(gui_data.handles.slice_plot(1).Visible,'on')
     % Define a plane of points to index
     % (the plane grid is defined based on the which cardinal plan is most
     % orthogonal to the plotted plane. this is janky but it works)
-<<<<<<< HEAD
-    slice_px_space = 3;
-=======
+
     ml_lim = xlim(gui_data.handles.axes_atlas);
     ap_lim = ylim(gui_data.handles.axes_atlas);
     dv_lim = zlim(gui_data.handles.axes_atlas);
 
     slice_px_space = 0.01; % resolution of slice to grab
->>>>>>> 247bb95cb47990b33bc2d82c3e88591703c08007
+
     [~,cam_plane] = max(abs(normal_vector./norm(normal_vector)));
     switch cam_plane
         case 1
@@ -440,15 +439,7 @@ if strcmp(gui_data.handles.slice_plot(1).Visible,'on')
                 -normal_vector(2);    
             
         case 3
-<<<<<<< HEAD
-            [plane_ml,plane_ap] = ndgrid(gui_data.ml_coords(1:slice_px_space:end), ...
-                gui_data.ap_coords(1:slice_px_space:end));
-            plane_dv = ...
-                (normal_vector(2)*plane_ap+normal_vector(1)*plane_ml + plane_offset)/ ...
-                -normal_vector(3);
-    end
-    
-=======
+
             [plane_ml_bregma,plane_ap_bregma] = ndgrid(...
                 ml_lim(1):slice_px_space:ml_lim(2),...
                 ap_lim(1):slice_px_space:ap_lim(2));
@@ -461,7 +452,7 @@ if strcmp(gui_data.handles.slice_plot(1).Visible,'on')
     [plane_ml_ccf,plane_ap_ccf,plane_dv_ccf] = ...
         transformPointsInverse(gui_data.ccf_bregma_tform,plane_ml_bregma,plane_ap_bregma,plane_dv_bregma);
 
->>>>>>> 247bb95cb47990b33bc2d82c3e88591703c08007
+
     % Grab pixels from (selected) volume
     plane_coords = ...
         round([plane_ap_ccf(:),plane_dv_ccf(:),plane_ml_ccf(:)]);
@@ -910,19 +901,10 @@ if ~isempty(plot_structure)
     plot_ccf_idx = find(cellfun(@(x) contains(x,plot_structure_id), ...
         gui_data.st.structure_id_path));
     
-<<<<<<< HEAD
-    % plot the structure
-    slice_spacing = 5;
-    plot_structure_color = hex2dec(reshape(gui_data.st.color_hex_triplet{plot_structure},2,[])')./255;
-    
-    [curr_ml_grid,curr_ap_grid,curr_dv_grid] = ...
-        ndgrid(gui_data.ml_coords(1:slice_spacing:end), ...
-        gui_data.ap_coords(1:slice_spacing:end), ...
-        gui_data.dv_coords(1:slice_spacing:end));
-=======
+
     % Plot the structure
     atlas_downsample = 5; % (downsample atlas to make this faster)
->>>>>>> 247bb95cb47990b33bc2d82c3e88591703c08007
+
     
     [ap_grid_ccf,dv_grid_ccf,ml_grid_ccf] = ...
         ndgrid(1:atlas_downsample:size(gui_data.av,1), ...
